@@ -1,0 +1,48 @@
+# sync-fork.yml — 每天8点同步 fork 自 upstream msitarzewski/agency-agents, 自动创建 PR
+name: Sync Fork
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # UTC 00:00 = 北京时间 08:00
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync-fork:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch & merge upstream
+        run: |
+          git remote add upstream https://github.com/msitarzewski/agency-agents.git || true
+          git fetch upstream main
+          git checkout -b sync-upstream
+          git merge upstream/main --no-edit
+
+      - name: Push sync branch
+        run: |
+          git push origin sync-upstream --force
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          base: main
+          head: sync-upstream
+          title: '🔄 Sync from upstream msitarzewski/agency-agents'
+          body: |
+            自动同步自 upstream [msitarzewski/agency-agents](https://github.com/msitarzewski/agency-agents)
+
+            - 触发: 定时任务(每天北京时间 08:00)
+            - 类型: automated sync
+          labels: sync,automated
+          draft: false

@@ -1,0 +1,98 @@
+# sync-experts.yml — 构建 experts.json 并推送到 prompt-expert-group
+# 触发: push 到 main(部门 .md 变更) + 每天8点(北京时间)定时
+name: Sync Experts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'academic/**'
+      - 'design/**'
+      - 'engineering/**'
+      - 'finance/**'
+      - 'game-development/**'
+      - 'gis/**'
+      - 'hr/**'
+      - 'integrations/**'
+      - 'legal/**'
+      - 'marketing/**'
+      - 'media/**'
+      - 'operations/**'
+      - 'product/**'
+      - 'qa/**'
+      - 'research/**'
+      - 'sales/**'
+      - 'security/**'
+      - 'services/**'
+      - 'support/**'
+      - 'translation/**'
+      - 'scripts/build-experts-json.js'
+  schedule:
+    - cron: '0 0 * * *'  # UTC 00:00 = 北京时间 08:00
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout kentpan/agency-agents-zh
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sync fork from upstream msitarzewski/agency-agents
+        continue-on-error: true
+        run: |
+          git remote add upstream https://github.com/msitarzewski/agency-agents.git || true
+          git fetch upstream main
+          git merge upstream/main --no-edit || echo "⚠️ 合并冲突,跳过 upstream 同步,继续构建"
+          git status
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build experts.json
+        run: |
+          node scripts/build-experts-json.js
+          echo "==== experts.json 预览 ===="
+          head -c 500 .data/experts.json
+          echo ""
+
+      - name: Commit & push .data/experts.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .data/experts.json
+          if git diff --cached --quiet; then
+            echo "ℹ️ experts.json 无变化,跳过 commit"
+          else
+            git commit -m "chore(data): auto-sync experts.json [skip ci]"
+            git push origin main
+          fi
+
+      - name: Push experts.json to prompt-expert-group
+        continue-on-error: true
+        env:
+          SYNC_API_URL: ${{ secrets.SYNC_API_URL }}
+          EXPERT_SYNC_TOKEN: ${{ secrets.EXPERT_SYNC_TOKEN }}
+        run: |
+          if [ -z "$SYNC_API_URL" ] || [ -z "$EXPERT_SYNC_TOKEN" ]; then
+            echo "⚠️ 缺少 SYNC_API_URL 或 EXPERT_SYNC_TOKEN Secret,跳过推送"
+            exit 0
+          fi
+          # 从 .data/experts.json ({generatedAt,total,experts:[...]}) 提取 experts 数组
+          jq -nc '{experts: .experts}' .data/experts.json > /tmp/sync-body.json
+          echo "==== 推送到 $SYNC_API_URL/api/admin/experts/sync ===="
+          curl -sS -X POST \
+            -H "Content-Type: application/json" \
+            -H "X-Sync-Token: $EXPERT_SYNC_TOKEN" \
+            --data-binary @/tmp/sync-body.json \
+            -w "\nHTTP_STATUS: %{http_code}\n" \
+            "$SYNC_API_URL/api/admin/experts/sync" || echo "⚠️ 推送失败,不阻断 workflow"
