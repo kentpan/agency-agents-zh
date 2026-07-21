@@ -82,6 +82,7 @@
 
 | 中文名 | 文件路径 |
 |--------|----------|
+| 香港股市合规审查专家 | `finance/finance-hk-stock-compliance-reviewer.md` |
 | 簿记与财务总监 | `finance/finance-bookkeeper-controller.md` |
 | 财务分析师 | `finance/finance-financial-analyst.md` |
 | 财务预测分析师 | `finance/finance-financial-forecaster.md` |
